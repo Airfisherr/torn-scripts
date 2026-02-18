@@ -326,6 +326,8 @@
 						this.displayElement.style.color = "#bfb22f";
 					} else if (raceStatus.toLowerCase().includes("in race")) {
 						this.displayElement.style.color = "#b63e2d";
+					} else {
+						this.displayElement.style.color = "rebeccapurple";
 					}
 
 					Logger.log(
