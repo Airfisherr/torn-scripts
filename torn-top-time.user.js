@@ -135,10 +135,7 @@
 				};
 			}
 
-			// Only log parsing errors occasionally
-			if (Math.random() < 0.01) {
-				Logger.log("Could not parse time from:", timeText);
-			}
+			Logger.log("Could not parse time from:", timeText);
 			return { hours: "00", minutes: "00", seconds: "00" };
 		},
 	};
