@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Race Checker
 // @namespace    http://tampermonkey.net/
-// @version      1.8.1
+// @version      1.8.2
 // @description  Displays a race status in the sidebar, compatible with "Torn: Show Timers"
 // @author       Airfisher [4074952]
 // @match        https://www.torn.com/*
@@ -21,9 +21,9 @@
 		retryDelay: 1000,
 		updateInterval: 2000,
 		primaryCheckInterval: 500,
-		primaryWaitTimeout: 15000, // Wait up to 15 seconds for primary container
+		primaryWaitTimeout: 1000,
 		fallbackCheckInterval: 500,
-		fallbackWaitTimeout: 5000, // Wait up to 5 seconds for fallback
+		fallbackWaitTimeout: 1000,
 		raceIconSelectors: [
 			"a[href='/page.php?sid=racing'][aria-label*='Racing:']",
 			"a[href='/page.php?sid=racing']",
