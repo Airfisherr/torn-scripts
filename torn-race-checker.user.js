@@ -6,6 +6,9 @@
 // @author       Airfisher [4074952]
 // @match        https://www.torn.com/*
 // @grant        none
+// @updateURL    https://raw.githubusercontent.com/Airfisherr/torn-scripts/torn-race-checker/main/torn-race-checker.user.js
+// @downloadURL  https://raw.githubusercontent.com/Airfisherr/torn-scripts/torn-race-checker/main/torn-race-checker.user.js
+// @supportURL   https://github.com/YOUR_USERNAME/torn-scripts/issues
 // ==/UserScript==
 
 (function () {
