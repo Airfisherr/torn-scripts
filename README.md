@@ -1,6 +1,6 @@
 # Airfisher's Torn Script Library
 
-## Torn Race Checker
+## Torn Race Checker - [Install with TamperMonkey](https://github.com/Airfisherr/torn-scripts/raw/refs/heads/main/torn-race-checker.user.js)
 
 Torn Race Checker adds a convenient race status display to your Torn sidebar that shows your current racing status at a glance.
 
