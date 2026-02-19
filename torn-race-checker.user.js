@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Race Checker
 // @namespace    http://tampermonkey.net/
-// @version      1.8.2
+// @version      1.8.3
 // @description  Displays a race status in the sidebar, compatible with "Torn: Show Timers"
 // @author       Airfisher [4074952]
 // @match        https://www.torn.com/*
@@ -275,8 +275,7 @@
 			}
 
 			if (!raceIcon) {
-				Logger.error("Race icon not found");
-				return "Not available";
+				return "Ready!";
 			}
 
 			let status =
