@@ -253,53 +253,34 @@
 		lastStatus: "",
 
 		getRaceStatus: function () {
-			let raceIcon = null;
-
-			for (const selector of CONFIG.raceIconSelectors) {
-				raceIcon = document.querySelector(selector);
-				if (raceIcon) {
-					Logger.log(`Found race icon with selector: ${selector}`);
-					break;
-				}
-			}
+			let raceIcon = CONFIG.raceIconSelectors.reduce(
+				(found, selector) => found || document.querySelector(selector),
+				null,
+			);
 
 			if (!raceIcon) {
-				const allLinks = document.querySelectorAll("a");
-				for (const link of allLinks) {
-					if (link.href && link.href.includes("racing")) {
-						raceIcon = link;
-						Logger.log("Found race icon through href search");
-						break;
-					}
-				}
+				raceIcon = Array.from(document.querySelectorAll("a")).find((link) =>
+					link.href?.includes("racing"),
+				);
 			}
 
-			if (!raceIcon) {
-				return "Ready!";
-			}
+			if (!raceIcon) return "Ready!";
 
-			let status =
+			const status = (
 				raceIcon.getAttribute("aria-label") ||
 				raceIcon.getAttribute("title") ||
-				raceIcon.textContent;
+				raceIcon.textContent ||
+				""
+			).toLowerCase();
 
-			if (!status) {
-				return "Unknown";
-			}
+			if (!status) return "Ready!";
 
-			status = status.toLowerCase();
-
-			if (status.includes("finished") || status.includes("ready")) {
+			if (status.includes("finished") || status.includes("ready"))
 				return "Ready!";
-			}
-			if (status.includes("waiting")) {
-				return "Waiting";
-			}
-			if (status.includes("racing")) {
-				return "In Race";
-			}
+			if (status.includes("waiting")) return "Waiting...";
+			if (status.includes("racing")) return "In Race";
 
-			return raceIcon.getAttribute("aria-label") || "Unknown";
+			return "Ready!";
 		},
 
 		hasStatusChanged: function () {
@@ -430,7 +411,6 @@
 				raceElement.className = "torn-race-display";
 
 				if (this.currentContainerType === "primary") {
-					// For line-h24 container - make it look like the other timer paragraphs
 					raceElement.style.cssText = `
 						font-size: .8rem;
 						font-weight: 400;
@@ -442,14 +422,13 @@
 
 					raceElement.innerHTML = `
 						<p style="margin: 0; display: flex; align-items: center;">
-							<b style="width: 60px; font-weight: bold;">Racing:</b>
-							<span id="race-status-text" style="cursor: pointer; transition: opacity 0.2s;" title="Race not ready">Loading...</span>
+							<b style="font-weight: bold; padding-right: 10px; ">Racing:</b>
+							<span id="race-status-text" style="cursor: pointer; transition: opacity 0.2s;">Loading...</span>
 						</p>
 					`;
 
 					this.statusContainer = raceElement.querySelector("#race-status-text");
 				} else {
-					// For points container - make it look like the point blocks
 					raceElement.style.cssText = `
 						font-size: 12px;
 						font-family: Arial, sans-serif;
@@ -461,7 +440,7 @@
 					raceElement.innerHTML = `
 						<p class="point-block___rQyUK" style="margin: 0; display: flex; align-items: center; width: 100%; cursor: pointer;" tabindex="0">
 							<span class="name___ChDL3" style="min-width: 45px;">Racing:</span>
-							<span id="race-status-text" class="value___mHNGb" style="transition: opacity 0.2s;" title="Race not ready">Loading...</span>
+							<span id="race-status-text" class="value___mHNGb" style="transition: opacity 0.2s;">Loading...</span>
 						</p>
 					`;
 
