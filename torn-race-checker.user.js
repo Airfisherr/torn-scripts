@@ -8,7 +8,7 @@
 // @grant        none
 // @updateURL    https://github.com/Airfisherr/torn-scripts/raw/refs/heads/main/torn-race-checker.user.js
 // @downloadURL  https://github.com/Airfisherr/torn-scripts/raw/refs/heads/main/torn-race-checker.user.js
-// @supportURL   https://github.com/YOUR_USERNAME/torn-scripts/issues
+// @supportURL   https://github.com/Airfisherr/torn-scripts/issues
 // ==/UserScript==
 
 (function () {
