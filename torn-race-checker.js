@@ -393,7 +393,6 @@
 						this.handleStatusClick(event),
 					);
 
-					// Add hover effect
 					this.displayElement.addEventListener("mouseenter", () => {
 						if (this.currentStatus === "Ready!") {
 							this.displayElement.style.opacity = "0.8";
@@ -460,7 +459,6 @@
 				if (this.displayElement.textContent !== raceStatus) {
 					this.displayElement.textContent = raceStatus;
 
-					// Update title/tooltip based on status
 					const titleText =
 						raceStatus === "Ready!"
 							? "Click to go to Racing"
@@ -474,11 +472,9 @@
 						if (parent) parent.title = titleText;
 					}
 
-					// Color coding based on status
 					const statusLower = raceStatus.toLowerCase();
 					if (statusLower.includes("ready")) {
 						this.displayElement.style.color = "#82c91e";
-						// Make it look more clickable when ready
 						this.displayElement.style.fontWeight = "bold";
 						if (this.currentContainerType === "primary") {
 							this.displayElement.style.cursor = "pointer";
