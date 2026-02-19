@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Race Checker
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.8
 // @description  Displays a race status in the sidebar, compatible with "Torn: Show Timers"
 // @author       Airfisher [4074952]
 // @match        https://www.torn.com/*
@@ -18,7 +18,9 @@
 		retryDelay: 1000,
 		updateInterval: 2000,
 		primaryCheckInterval: 500,
-		primaryCheckTimeout: 8000,
+		primaryWaitTimeout: 15000, // Wait up to 15 seconds for primary container
+		fallbackCheckInterval: 500,
+		fallbackWaitTimeout: 5000, // Wait up to 5 seconds for fallback
 		raceIconSelectors: [
 			"a[href='/page.php?sid=racing'][aria-label*='Racing:']",
 			"a[href='/page.php?sid=racing']",
@@ -60,8 +62,17 @@
 			);
 		},
 		info: function (message) {
-			console.info(
-				"[Torn Race Checker]:",
+			if (CONFIG.debug) {
+				console.info(
+					"[Torn Race Checker]:",
+					message,
+					new Date().toLocaleTimeString(),
+				);
+			}
+		},
+		warn: function (message) {
+			console.warn(
+				"[Torn Race Checker WARNING]:",
 				message,
 				new Date().toLocaleTimeString(),
 			);
@@ -118,59 +129,119 @@
 			);
 		},
 
-		findSpecificContainers: function () {
-			// Try primary container (line-h24 div)
-			for (const selector of CONFIG.containerSelectors.primary) {
-				const element = document.querySelector(selector);
-				if (element && element.classList.contains("line-h24")) {
-					Logger.log(`Found primary container with class line-h24`);
-					return { container: element, type: "primary" };
-				}
-			}
-
-			// Try fallback container (points___UO9AU div)
-			for (const selector of CONFIG.containerSelectors.fallback) {
-				const element = document.querySelector(selector);
-				if (element && element.classList.contains("points___UO9AU")) {
-					Logger.log(`Found fallback container with class points___UO9AU`);
-					return { container: element, type: "fallback" };
-				}
-			}
-
-			return { container: null, type: null };
-		},
-
-		waitForSpecificContainers: function () {
+		// Specifically wait for primary container with class line-h24
+		waitForPrimaryContainer: function () {
 			return new Promise((resolve) => {
 				const startTime = Date.now();
 				let attempts = 0;
 
-				const checkContainer = () => {
+				const checkPrimary = () => {
 					attempts++;
-					const result = this.findSpecificContainers();
 
-					if (result.container) {
-						Logger.log(
-							`Container found after ${attempts} attempts (${Date.now() - startTime}ms)`,
-						);
-						resolve(result);
-						return;
+					// Try each primary selector
+					for (const selector of CONFIG.containerSelectors.primary) {
+						const element = document.querySelector(selector);
+						if (
+							element &&
+							element.classList.contains("line-h24") &&
+							this.isElementVisible(element)
+						) {
+							const elapsed = Date.now() - startTime;
+							Logger.log(
+								`Primary container found after ${attempts} attempts (${elapsed}ms)`,
+							);
+							resolve({ container: element, type: "primary", found: true });
+							return;
+						}
 					}
 
 					const elapsed = Date.now() - startTime;
-					if (elapsed >= CONFIG.primaryCheckTimeout) {
-						Logger.log(
-							`No container found within ${CONFIG.primaryCheckTimeout}ms`,
+					if (elapsed >= CONFIG.primaryWaitTimeout) {
+						Logger.warn(
+							`Primary container not found within ${CONFIG.primaryWaitTimeout}ms`,
 						);
-						resolve({ container: null, type: null });
+						resolve({ container: null, type: "primary", found: false });
 						return;
 					}
 
-					setTimeout(checkContainer, CONFIG.primaryCheckInterval);
+					setTimeout(checkPrimary, CONFIG.primaryCheckInterval);
 				};
 
-				checkContainer();
+				checkPrimary();
 			});
+		},
+
+		// Wait for fallback container only after primary fails
+		waitForFallbackContainer: function () {
+			return new Promise((resolve) => {
+				const startTime = Date.now();
+				let attempts = 0;
+
+				const checkFallback = () => {
+					attempts++;
+
+					// Try each fallback selector
+					for (const selector of CONFIG.containerSelectors.fallback) {
+						const element = document.querySelector(selector);
+						if (
+							element &&
+							element.classList.contains("points___UO9AU") &&
+							this.isElementVisible(element)
+						) {
+							const elapsed = Date.now() - startTime;
+							Logger.log(
+								`Fallback container found after ${attempts} attempts (${elapsed}ms)`,
+							);
+							resolve({ container: element, type: "fallback", found: true });
+							return;
+						}
+					}
+
+					const elapsed = Date.now() - startTime;
+					if (elapsed >= CONFIG.fallbackWaitTimeout) {
+						Logger.warn(
+							`Fallback container not found within ${CONFIG.fallbackWaitTimeout}ms`,
+						);
+						resolve({ container: null, type: "fallback", found: false });
+						return;
+					}
+
+					setTimeout(checkFallback, CONFIG.fallbackCheckInterval);
+				};
+
+				checkFallback();
+			});
+		},
+
+		// New method that properly prioritizes primary container
+		findBestAvailableContainer: async function () {
+			Logger.info(
+				"Attempting to find primary container first (will wait up to 15 seconds)...",
+			);
+
+			// Step 1: Wait for primary container
+			const primaryResult = await this.waitForPrimaryContainer();
+
+			if (primaryResult.found) {
+				Logger.info("Using primary container (line-h24)");
+				return primaryResult;
+			}
+
+			Logger.warn(
+				"Primary container not found, attempting fallback container...",
+			);
+
+			// Step 2: Only try fallback if primary fails
+			const fallbackResult = await this.waitForFallbackContainer();
+
+			if (fallbackResult.found) {
+				Logger.info("Using fallback container (points___UO9AU)");
+				return fallbackResult;
+			}
+
+			// Step 3: Neither container found
+			Logger.error("Neither primary nor fallback container found");
+			return { container: null, type: null, found: false };
 		},
 	};
 
@@ -246,7 +317,7 @@
 	const RaceDisplay = {
 		isAdded: false,
 		displayElement: null,
-		statusContainer: null, // The container that holds the status text (could be span or the clickable element)
+		statusContainer: null,
 		intervalId: null,
 		observer: null,
 		currentContainerType: null,
@@ -255,7 +326,8 @@
 
 		init: function () {
 			Logger.info("Torn Race Checker initializing...");
-			setTimeout(() => this.attemptInitialInsertion(), 1000);
+			// Give the page a moment to load, then start looking
+			setTimeout(() => this.attemptInitialInsertion(), 2000);
 			this.setupObserver();
 		},
 
@@ -266,6 +338,7 @@
 				clearTimeout(debounceTimer);
 				debounceTimer = setTimeout(() => {
 					if (!this.isAdded) {
+						// Only attempt insertion if we haven't added yet
 						this.attemptInitialInsertion();
 					} else if (RaceUtils.hasStatusChanged()) {
 						this.updateDisplay();
@@ -273,17 +346,24 @@
 				}, 500);
 			});
 
-			this.observer.observe(document.body, {
+			// Observe the sidebar specifically if possible, otherwise whole body
+			const sidebar = document.querySelector("#sidebar");
+			const targetNode = sidebar || document.body;
+
+			this.observer.observe(targetNode, {
 				childList: true,
 				subtree: true,
 				attributes: true,
 				attributeFilter: ["aria-label", "class", "style"],
 			});
+
+			Logger.log("Observer attached to " + (sidebar ? "sidebar" : "body"));
 		},
 
 		attemptInitialInsertion: function () {
 			if (this.isAdded) return;
-			if (this.retryCount > 10) {
+			if (this.retryCount > 15) {
+				// Increased max retries
 				Logger.error("Max retry attempts reached");
 				return;
 			}
@@ -296,11 +376,16 @@
 		addDisplay: async function () {
 			if (this.isAdded) return;
 
-			Logger.log("Looking for specific containers...");
-			const { container, type } = await DOMUtils.waitForSpecificContainers();
+			Logger.log(
+				"Searching for best available container (primary preferred)...",
+			);
 
-			if (!container) {
-				Logger.log("No container found, will retry...");
+			// Use the new prioritized container finder
+			const { container, type, found } =
+				await DOMUtils.findBestAvailableContainer();
+
+			if (!found || !container) {
+				Logger.warn("No container found on this attempt, will retry...");
 				setTimeout(() => this.attemptInitialInsertion(), CONFIG.retryDelay);
 				return;
 			}
@@ -325,7 +410,7 @@
 				Logger.log("Navigating to racing page from click");
 				window.location.href = CONFIG.racingUrl;
 			} else {
-				// If not ready, prevent default action and maybe show a message
+				// If not ready, prevent default action
 				event.preventDefault();
 				event.stopPropagation();
 				Logger.log("Click ignored - race not ready");
@@ -356,11 +441,10 @@
 					raceElement.innerHTML = `
 						<p style="margin: 0; display: flex; align-items: center;">
 							<b style="width: 60px; font-weight: bold;">Racing:</b>
-							<span id="race-status-text" style="cursor: pointer; transition: opacity 0.2s;" title="${this.currentStatus === "Ready!" ? "Click to go to Racing" : "Race not ready"}">Loading...</span>
+							<span id="race-status-text" style="cursor: pointer; transition: opacity 0.2s;" title="Race not ready">Loading...</span>
 						</p>
 					`;
 
-					// Find and store the status span
 					this.statusContainer = raceElement.querySelector("#race-status-text");
 				} else {
 					// For points container - make it look like the point blocks
@@ -375,20 +459,17 @@
 					raceElement.innerHTML = `
 						<p class="point-block___rQyUK" style="margin: 0; display: flex; align-items: center; width: 100%; cursor: pointer;" tabindex="0">
 							<span class="name___ChDL3" style="min-width: 45px;">Racing:</span>
-							<span id="race-status-text" class="value___mHNGb" style="transition: opacity 0.2s;" title="${this.currentStatus === "Ready!" ? "Click to go to Racing" : "Race not ready"}">Loading...</span>
+							<span id="race-status-text" class="value___mHNGb" style="transition: opacity 0.2s;" title="Race not ready">Loading...</span>
 						</p>
 					`;
 
-					// For fallback, the entire p is clickable
 					this.statusContainer = raceElement.querySelector("p");
 				}
 
-				// Store reference to the status text element
 				this.displayElement = raceElement.querySelector("#race-status-text");
 
-				// Add click handler based on container type
+				// Add click handlers based on container type
 				if (this.currentContainerType === "primary") {
-					// For primary, make just the status span clickable
 					this.displayElement.addEventListener("click", (event) =>
 						this.handleStatusClick(event),
 					);
@@ -405,13 +486,11 @@
 						this.displayElement.style.textDecoration = "none";
 					});
 				} else {
-					// For fallback, make the entire row clickable
 					const clickableElement = raceElement.querySelector("p");
 					clickableElement.addEventListener("click", (event) =>
 						this.handleStatusClick(event),
 					);
 
-					// Add hover effect for the entire row
 					clickableElement.addEventListener("mouseenter", () => {
 						if (this.currentStatus === "Ready!") {
 							clickableElement.style.backgroundColor =
@@ -426,7 +505,7 @@
 					});
 				}
 
-				// Insert at the correct position based on container type
+				// Insert at the correct position
 				if (this.currentContainerType === "primary") {
 					const hr = container.querySelector("hr");
 					if (hr) {
@@ -467,7 +546,6 @@
 					if (this.currentContainerType === "primary") {
 						this.displayElement.title = titleText;
 					} else {
-						// For fallback, update the p element's title
 						const parent = this.displayElement.closest("p");
 						if (parent) parent.title = titleText;
 					}
@@ -491,7 +569,7 @@
 						this.displayElement.style.fontWeight = "normal";
 						this.displayElement.style.cursor = "default";
 					} else {
-						this.displayElement.style.color = ""; // Reset to default
+						this.displayElement.style.color = "";
 						this.displayElement.style.fontWeight = "normal";
 						this.displayElement.style.cursor = "default";
 					}
@@ -530,19 +608,20 @@
 	};
 
 	// ========== INITIALIZATION ==========
+	// More robust initialization with longer delays
 	if (
 		document.readyState === "complete" ||
 		document.readyState === "interactive"
 	) {
-		setTimeout(() => RaceDisplay.init(), 500);
+		setTimeout(() => RaceDisplay.init(), 2000);
 	} else {
 		document.addEventListener("DOMContentLoaded", () => {
-			setTimeout(() => RaceDisplay.init(), 500);
+			setTimeout(() => RaceDisplay.init(), 2000);
 		});
 	}
 
 	window.addEventListener("load", () => {
-		setTimeout(() => RaceDisplay.init(), 500);
+		setTimeout(() => RaceDisplay.init(), 1000);
 	});
 
 	// ========== CLEANUP ==========
@@ -557,21 +636,21 @@
 			start: () => RaceDisplay.init(),
 			getRaceStatus: () => RaceUtils.getRaceStatus(),
 			forceUpdate: () => RaceDisplay.updateDisplay(),
-			findContainers: () => DOMUtils.findSpecificContainers(),
+			findBestContainer: () => DOMUtils.findBestAvailableContainer(),
 			testSelectors: () => {
 				console.group("Selector Testing");
 				console.log("Race Icon Selectors:");
 				CONFIG.raceIconSelectors.forEach((sel) => {
 					console.log(`${sel}: ${document.querySelector(sel) ? "✓" : "✗"}`);
 				});
-				console.log("\nPrimary Container Selectors:");
+				console.log("\nPrimary Container Selectors (line-h24):");
 				CONFIG.containerSelectors.primary.forEach((sel) => {
 					const el = document.querySelector(sel);
 					console.log(
 						`${sel}: ${el ? "✓" : "✗"} ${el ? `(class: ${el.className})` : ""}`,
 					);
 				});
-				console.log("\nFallback Container Selectors:");
+				console.log("\nFallback Container Selectors (points___UO9AU):");
 				CONFIG.containerSelectors.fallback.forEach((sel) => {
 					const el = document.querySelector(sel);
 					console.log(
