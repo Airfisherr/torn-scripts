@@ -291,7 +291,7 @@
 			status = status.toLowerCase();
 
 			if (status.includes("finished") || status.includes("ready")) {
-				return "Ready!!";
+				return "Ready!";
 			}
 			if (status.includes("waiting")) {
 				return "Waiting";
