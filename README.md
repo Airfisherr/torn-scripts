@@ -14,11 +14,17 @@ Torn Race Checker adds a convenient race status display to your Torn sidebar tha
 
 - ✅ Works great with the popular "Torn: Show Timers" script without any conflicts
 
-| Default                            |      With "Torn: Show Timers"      |
-| ---------------------------------- | :--------------------------------: |
-| ![](./imgs//TornRaceChecker/1.png) | ![](./imgs//TornRaceChecker/2.png) |
+| Default                           |     With "Torn: Show Timers"      |
+| --------------------------------- | :-------------------------------: |
+| ![](./imgs/TornRaceChecker/1.png) | ![](./imgs/TornRaceChecker/2.png) |
 
 ###### ~ Thanks to `Kobacon [3474157]` for the idea
+
+## Torn Top Time - [Install with TamperMonkey](https://github.com/Airfisherr/torn-scripts/raw/refs/heads/main/torn-top-time.user.js)
+
+Torn Top Time adds... well... a time, at the top of torn.
+
+![](./imgs/TornTopTime/1.png)
 
 ## Other Scripts
 
