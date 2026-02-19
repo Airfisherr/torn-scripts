@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Race Checker
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.7
 // @description  Displays a race status in the sidebar, compatible with "Torn: Show Timers"
 // @author       Airfisher [4074952]
 // @match        https://www.torn.com/*
@@ -14,48 +14,85 @@
 	// ========== CONFIGURATION ==========
 	const CONFIG = {
 		debug: false,
-		ApiKey: null,
-		retryAttempts: 20,
-		retryDelay: 1500,
+		retryAttempts: 30,
+		retryDelay: 1000,
 		updateInterval: 2000,
 		primaryCheckInterval: 500,
-		primaryCheckTimeout: 5000,
-		raceIconSelector: "a[href='/page.php?sid=racing'][aria-label*='Racing:']",
-		primaryContainerSelector:
-			"#sidebar > div:nth-child(2) > div > div.user-information___VBSOk > div > div.toggle-content___BJ9Q9 > div > div:nth-child(1) > div",
-		fallbackContainerSelector:
-			"#sidebar > div:nth-child(2) > div > div.user-information___VBSOk > div > div.toggle-content___BJ9Q9 > div",
+		primaryCheckTimeout: 8000,
+		raceIconSelectors: [
+			"a[href='/page.php?sid=racing'][aria-label*='Racing:']",
+			"a[href='/page.php?sid=racing']",
+			"a[aria-label*='Racing:']",
+			"a[aria-label*='racing']",
+			".status-icons___gPkXF a[href*='racing']",
+			"li.icon17___eXCy4 a",
+			"a[href*='racing']",
+		],
+		containerSelectors: {
+			primary: [
+				"#sidebar > div:nth-child(2) > div > div.user-information___VBSOk > div > div.toggle-content___BJ9Q9 > div > div:nth-child(1) > div",
+				"#sidebar .user-information___VBSOk .toggle-content___BJ9Q9 div.line-h24",
+			],
+			fallback: [
+				"#sidebar > div:nth-child(2) > div > div.user-information___VBSOk > div > div.toggle-content___BJ9Q9 > div",
+				"#sidebar .user-information___VBSOk .toggle-content___BJ9Q9 div.points___UO9AU",
+			],
+		},
+		racingUrl: "https://www.torn.com/page.php?sid=racing",
 	};
 
 	// ========== LOGGER ==========
 	const Logger = {
 		log: function (message) {
 			if (CONFIG.debug) {
-				console.log("[Torn Race Checker]:", message);
+				console.log(
+					"[Torn Race Checker]:",
+					message,
+					new Date().toLocaleTimeString(),
+				);
 			}
 		},
 		error: function (message) {
-			console.error("[Torn Race Checker ERROR]:", message);
+			console.error(
+				"[Torn Race Checker ERROR]:",
+				message,
+				new Date().toLocaleTimeString(),
+			);
+		},
+		info: function (message) {
+			console.info(
+				"[Torn Race Checker]:",
+				message,
+				new Date().toLocaleTimeString(),
+			);
 		},
 	};
 
 	// ========== DOM UTILITIES ==========
 	const DOMUtils = {
 		waitForElement: function (
-			selector,
+			selectors,
 			maxAttempts = CONFIG.retryAttempts,
 			interval = 500,
 		) {
 			return new Promise((resolve) => {
 				let attempts = 0;
+				const selectorList = Array.isArray(selectors) ? selectors : [selectors];
 
 				const checkElement = () => {
 					attempts++;
-					const element = document.querySelector(selector);
 
-					if (element) {
-						resolve(element);
-					} else if (attempts >= maxAttempts) {
+					for (const selector of selectorList) {
+						const element = document.querySelector(selector);
+						if (element && this.isElementVisible(element)) {
+							Logger.log(`Found element with selector: ${selector}`);
+							resolve(element);
+							return;
+						}
+					}
+
+					if (attempts >= maxAttempts) {
+						Logger.log(`Element not found after ${maxAttempts} attempts`);
 						resolve(null);
 					} else {
 						setTimeout(checkElement, interval);
@@ -67,54 +104,73 @@
 		},
 
 		isElementVisible: function (element) {
-			return element && element.offsetParent !== null;
+			if (!element) return false;
+
+			const style = window.getComputedStyle(element);
+			return (
+				!!(
+					element.offsetWidth ||
+					element.offsetHeight ||
+					element.getClientRects().length
+				) &&
+				style.display !== "none" &&
+				style.visibility !== "hidden"
+			);
 		},
 
-		waitForPrimaryContainer: function () {
+		findSpecificContainers: function () {
+			// Try primary container (line-h24 div)
+			for (const selector of CONFIG.containerSelectors.primary) {
+				const element = document.querySelector(selector);
+				if (element && element.classList.contains("line-h24")) {
+					Logger.log(`Found primary container with class line-h24`);
+					return { container: element, type: "primary" };
+				}
+			}
+
+			// Try fallback container (points___UO9AU div)
+			for (const selector of CONFIG.containerSelectors.fallback) {
+				const element = document.querySelector(selector);
+				if (element && element.classList.contains("points___UO9AU")) {
+					Logger.log(`Found fallback container with class points___UO9AU`);
+					return { container: element, type: "fallback" };
+				}
+			}
+
+			return { container: null, type: null };
+		},
+
+		waitForSpecificContainers: function () {
 			return new Promise((resolve) => {
 				const startTime = Date.now();
 				let attempts = 0;
 
-				const checkPrimary = () => {
+				const checkContainer = () => {
 					attempts++;
-					const primaryContainer = document.querySelector(
-						CONFIG.primaryContainerSelector,
-					);
+					const result = this.findSpecificContainers();
 
-					if (primaryContainer && this.isElementVisible(primaryContainer)) {
+					if (result.container) {
 						Logger.log(
-							`Primary container found after ${attempts} attempts (${Date.now() - startTime}ms)`,
+							`Container found after ${attempts} attempts (${Date.now() - startTime}ms)`,
 						);
-						resolve({ container: primaryContainer, type: "primary" });
+						resolve(result);
 						return;
 					}
 
 					const elapsed = Date.now() - startTime;
 					if (elapsed >= CONFIG.primaryCheckTimeout) {
 						Logger.log(
-							`Primary container not found within ${CONFIG.primaryCheckTimeout}ms, using fallback`,
+							`No container found within ${CONFIG.primaryCheckTimeout}ms`,
 						);
-						const fallbackContainer = document.querySelector(
-							CONFIG.fallbackContainerSelector,
-						);
-						if (fallbackContainer && this.isElementVisible(fallbackContainer)) {
-							resolve({ container: fallbackContainer, type: "fallback" });
-						} else {
-							resolve({ container: null, type: null });
-						}
+						resolve({ container: null, type: null });
 						return;
 					}
 
-					setTimeout(checkPrimary, CONFIG.primaryCheckInterval);
+					setTimeout(checkContainer, CONFIG.primaryCheckInterval);
 				};
 
-				checkPrimary();
+				checkContainer();
 			});
-		},
-
-		getTargetContainer: async function () {
-			const result = await this.waitForPrimaryContainer();
-			return result;
 		},
 	};
 
@@ -123,53 +179,63 @@
 		lastStatus: "",
 
 		getRaceStatus: function () {
-			let raceIcon = document.querySelector(CONFIG.raceIconSelector);
+			let raceIcon = null;
+
+			for (const selector of CONFIG.raceIconSelectors) {
+				raceIcon = document.querySelector(selector);
+				if (raceIcon) {
+					Logger.log(`Found race icon with selector: ${selector}`);
+					break;
+				}
+			}
 
 			if (!raceIcon) {
-				const fallbackSelectors = [
-					"a[href='/page.php?sid=racing']",
-					"a[aria-label*='Racing:']",
-					".status-icons___gPkXF a[href*='racing']",
-					"li.icon17___eXCy4 a",
-				];
-
-				for (const selector of fallbackSelectors) {
-					raceIcon = document.querySelector(selector);
-					if (raceIcon) {
-						Logger.log(`Found race icon with fallback selector: ${selector}`);
+				const allLinks = document.querySelectorAll("a");
+				for (const link of allLinks) {
+					if (link.href && link.href.includes("racing")) {
+						raceIcon = link;
+						Logger.log("Found race icon through href search");
 						break;
 					}
 				}
 			}
 
 			if (!raceIcon) {
-				Logger.error("Race icon not found with any selector");
-				return "Not available?";
+				Logger.error("Race icon not found");
+				return "Not available";
 			}
 
-			const ariaLabel = raceIcon.getAttribute("aria-label");
+			let status =
+				raceIcon.getAttribute("aria-label") ||
+				raceIcon.getAttribute("title") ||
+				raceIcon.textContent;
 
-			if (!ariaLabel) {
-				Logger.error("No aria-label found on race icon");
-				return "Unknown?";
+			if (!status) {
+				return "Unknown";
 			}
-			if (ariaLabel?.toLowerCase().includes("finished")) {
+
+			status = status.toLowerCase();
+
+			if (status.includes("finished") || status.includes("ready")) {
 				return "Ready!";
 			}
-			if (ariaLabel?.toLowerCase().includes("waiting")) {
+			if (status.includes("waiting")) {
 				return "Waiting";
 			}
-			if (ariaLabel?.toLowerCase().includes("racing")) {
+			if (status.includes("racing")) {
 				return "In Race";
 			}
 
-			return ariaLabel;
+			return raceIcon.getAttribute("aria-label") || "Unknown";
 		},
 
 		hasStatusChanged: function () {
 			const currentStatus = this.getRaceStatus();
 			const changed = currentStatus !== this.lastStatus;
 			if (changed) {
+				Logger.log(
+					`Status changed from "${this.lastStatus}" to "${currentStatus}"`,
+				);
 				this.lastStatus = currentStatus;
 			}
 			return changed;
@@ -180,14 +246,16 @@
 	const RaceDisplay = {
 		isAdded: false,
 		displayElement: null,
+		statusContainer: null, // The container that holds the status text (could be span or the clickable element)
 		intervalId: null,
 		observer: null,
-		updateTimeout: null,
 		currentContainerType: null,
+		retryCount: 0,
+		currentStatus: "",
 
 		init: function () {
-			Logger.log("Torn Race Checker initializing...");
-			this.attemptInitialInsertion();
+			Logger.info("Torn Race Checker initializing...");
+			setTimeout(() => this.attemptInitialInsertion(), 1000);
 			this.setupObserver();
 		},
 
@@ -197,141 +265,243 @@
 			this.observer = new MutationObserver(() => {
 				clearTimeout(debounceTimer);
 				debounceTimer = setTimeout(() => {
-					if (!this.isAdded && this.shouldAddDisplay()) {
-						this.addDisplay();
-					} else if (this.isAdded && RaceUtils.hasStatusChanged()) {
+					if (!this.isAdded) {
+						this.attemptInitialInsertion();
+					} else if (RaceUtils.hasStatusChanged()) {
 						this.updateDisplay();
 					}
 				}, 500);
 			});
 
-			const sidebar = document.querySelector("#sidebar");
-			if (sidebar) {
-				this.observer.observe(sidebar, {
-					childList: true,
-					subtree: true,
-					attributes: true,
-					attributeFilter: ["aria-label"],
-				});
-			} else {
-				this.observer.observe(document.body, {
-					childList: true,
-					subtree: true,
-				});
-			}
+			this.observer.observe(document.body, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				attributeFilter: ["aria-label", "class", "style"],
+			});
 		},
 
 		attemptInitialInsertion: function () {
-			if (document.readyState === "loading") {
-				document.addEventListener("DOMContentLoaded", () => this.addDisplay());
-			} else {
-				this.addDisplay();
-			}
-		},
-
-		shouldAddDisplay: function () {
-			const { container } = DOMUtils.getTargetContainer();
-			return container && DOMUtils.isElementVisible(container);
-		},
-
-		addDisplay: async function () {
-			if (this.isAdded) {
+			if (this.isAdded) return;
+			if (this.retryCount > 10) {
+				Logger.error("Max retry attempts reached");
 				return;
 			}
 
-			Logger.log(
-				"Checking for primary container (will wait up to 5 seconds)...",
-			);
-			const { container, type } = await DOMUtils.getTargetContainer();
+			this.retryCount++;
+			Logger.log(`Attempting insertion (attempt ${this.retryCount})...`);
+			this.addDisplay();
+		},
+
+		addDisplay: async function () {
+			if (this.isAdded) return;
+
+			Logger.log("Looking for specific containers...");
+			const { container, type } = await DOMUtils.waitForSpecificContainers();
 
 			if (!container) {
-				Logger.error("No container found after waiting, will retry later");
-				setTimeout(() => this.addDisplay(), CONFIG.retryDelay);
+				Logger.log("No container found, will retry...");
+				setTimeout(() => this.attemptInitialInsertion(), CONFIG.retryDelay);
 				return;
 			}
 
 			this.currentContainerType = type;
-			this.createAndInsertDisplay(container);
-			this.startUpdates();
-			this.isAdded = true;
-			Logger.log(`Display added successfully to ${type} container`);
+			Logger.info(`Container found (type: ${type}), creating display...`);
+
+			if (this.createAndInsertDisplay(container)) {
+				this.startUpdates();
+				this.isAdded = true;
+				this.retryCount = 0;
+				Logger.info(`Display added successfully to ${type} container`);
+			} else {
+				Logger.error("Failed to create display, retrying...");
+				setTimeout(() => this.attemptInitialInsertion(), CONFIG.retryDelay);
+			}
+		},
+
+		handleStatusClick: function (event) {
+			// Only navigate if the status is "Ready!"
+			if (this.currentStatus === "Ready!") {
+				Logger.log("Navigating to racing page from click");
+				window.location.href = CONFIG.racingUrl;
+			} else {
+				// If not ready, prevent default action and maybe show a message
+				event.preventDefault();
+				event.stopPropagation();
+				Logger.log("Click ignored - race not ready");
+			}
 		},
 
 		createAndInsertDisplay: function (container) {
-			const existingDisplay = container.querySelector(".torn-race-display");
-			if (existingDisplay) {
-				existingDisplay.remove();
+			try {
+				const existingDisplay = container.querySelector(".torn-race-display");
+				if (existingDisplay) {
+					existingDisplay.remove();
+				}
+
+				const raceElement = document.createElement("div");
+				raceElement.className = "torn-race-display";
+
+				if (this.currentContainerType === "primary") {
+					// For line-h24 container - make it look like the other timer paragraphs
+					raceElement.style.cssText = `
+						font-size: .8rem;
+						font-weight: 400;
+						line-height: 24px;
+						display: block;
+						margin: 0;
+						padding: 0;
+					`;
+
+					raceElement.innerHTML = `
+						<p style="margin: 0; display: flex; align-items: center;">
+							<b style="width: 60px; font-weight: bold;">Racing:</b>
+							<span id="race-status-text" style="cursor: pointer; transition: opacity 0.2s;" title="${this.currentStatus === "Ready!" ? "Click to go to Racing" : "Race not ready"}">Loading...</span>
+						</p>
+					`;
+
+					// Find and store the status span
+					this.statusContainer = raceElement.querySelector("#race-status-text");
+				} else {
+					// For points container - make it look like the point blocks
+					raceElement.style.cssText = `
+						font-size: 12px;
+						font-family: Arial, sans-serif;
+						display: flex;
+						align-items: center;
+						padding: 2px 0;
+					`;
+
+					raceElement.innerHTML = `
+						<p class="point-block___rQyUK" style="margin: 0; display: flex; align-items: center; width: 100%; cursor: pointer;" tabindex="0">
+							<span class="name___ChDL3" style="min-width: 45px;">Racing:</span>
+							<span id="race-status-text" class="value___mHNGb" style="transition: opacity 0.2s;" title="${this.currentStatus === "Ready!" ? "Click to go to Racing" : "Race not ready"}">Loading...</span>
+						</p>
+					`;
+
+					// For fallback, the entire p is clickable
+					this.statusContainer = raceElement.querySelector("p");
+				}
+
+				// Store reference to the status text element
+				this.displayElement = raceElement.querySelector("#race-status-text");
+
+				// Add click handler based on container type
+				if (this.currentContainerType === "primary") {
+					// For primary, make just the status span clickable
+					this.displayElement.addEventListener("click", (event) =>
+						this.handleStatusClick(event),
+					);
+
+					// Add hover effect
+					this.displayElement.addEventListener("mouseenter", () => {
+						if (this.currentStatus === "Ready!") {
+							this.displayElement.style.opacity = "0.8";
+							this.displayElement.style.textDecoration = "underline";
+						}
+					});
+
+					this.displayElement.addEventListener("mouseleave", () => {
+						this.displayElement.style.opacity = "1";
+						this.displayElement.style.textDecoration = "none";
+					});
+				} else {
+					// For fallback, make the entire row clickable
+					const clickableElement = raceElement.querySelector("p");
+					clickableElement.addEventListener("click", (event) =>
+						this.handleStatusClick(event),
+					);
+
+					// Add hover effect for the entire row
+					clickableElement.addEventListener("mouseenter", () => {
+						if (this.currentStatus === "Ready!") {
+							clickableElement.style.backgroundColor =
+								"rgba(130, 201, 30, 0.1)";
+							this.displayElement.style.textDecoration = "underline";
+						}
+					});
+
+					clickableElement.addEventListener("mouseleave", () => {
+						clickableElement.style.backgroundColor = "";
+						this.displayElement.style.textDecoration = "none";
+					});
+				}
+
+				// Insert at the correct position based on container type
+				if (this.currentContainerType === "primary") {
+					const hr = container.querySelector("hr");
+					if (hr) {
+						container.insertBefore(raceElement, hr);
+						Logger.log("Inserted race display before HR in primary container");
+					} else {
+						container.appendChild(raceElement);
+						Logger.log(
+							"Appended race display to primary container (no HR found)",
+						);
+					}
+				} else {
+					container.appendChild(raceElement);
+					Logger.log("Appended race display to fallback container");
+				}
+
+				this.updateDisplay();
+				return true;
+			} catch (error) {
+				Logger.error(`Error creating display: ${error.message}`);
+				return false;
 			}
-
-			const raceElement = document.createElement("div");
-			raceElement.className = "torn-race-display";
-
-			if (this.currentContainerType === "primary") {
-				raceElement.style.cssText = `
-      font-size: 12.8px;
-      font-family: Arial, sans-serif;
-      display: flex;
-      align-items: center;
-    `;
-			} else {
-				raceElement.style.cssText = `
-      margin-bottom: 4px;
-      font-size: 12px;
-      font-family: Arial, sans-serif;
-      display: flex;
-      align-items: center;
-    `;
-			}
-
-			raceElement.innerHTML = `
-    <a href="https://www.torn.com/page.php?sid=racing" style="
-      flex: 1;
-      text-decoration: none;
-      color: inherit;
-      display: flex;
-      align-items: center;
-      cursor: pointer;
-    ">
-      <span style="font-weight: bold; margin-right: 5px;">Racing: </span>
-      <span id="race-status-text" style="margin-left: 2px;">Loading...</span>
-    </a>
-  `;
-
-			this.displayElement = raceElement.querySelector("#race-status-text");
-			this.linkElement = raceElement.querySelector("a");
-
-			const elementChildren = Array.from(container.children).filter(
-				(child) => child.nodeType === Node.ELEMENT_NODE,
-			);
-
-			if (elementChildren.length >= 2) {
-				const lastElement = elementChildren[elementChildren.length - 1];
-				container.insertBefore(raceElement, lastElement);
-			} else {
-				container.appendChild(raceElement);
-			}
-
-			this.updateDisplay();
 		},
 
 		updateDisplay: function () {
-			if (this.displayElement && this.linkElement) {
+			if (this.displayElement) {
 				const raceStatus = RaceUtils.getRaceStatus();
+				this.currentStatus = raceStatus;
+
 				if (this.displayElement.textContent !== raceStatus) {
 					this.displayElement.textContent = raceStatus;
 
-					if (raceStatus.toLowerCase().includes("ready")) {
-						this.displayElement.style.color = "#82c91e";
-					} else if (raceStatus.toLowerCase().includes("waiting")) {
-						this.displayElement.style.color = "#bfb22f";
-					} else if (raceStatus.toLowerCase().includes("in race")) {
-						this.displayElement.style.color = "#b63e2d";
+					// Update title/tooltip based on status
+					const titleText =
+						raceStatus === "Ready!"
+							? "Click to go to Racing"
+							: "Race not ready";
+
+					if (this.currentContainerType === "primary") {
+						this.displayElement.title = titleText;
 					} else {
-						this.displayElement.style.color = "rebeccapurple";
+						// For fallback, update the p element's title
+						const parent = this.displayElement.closest("p");
+						if (parent) parent.title = titleText;
+					}
+
+					// Color coding based on status
+					const statusLower = raceStatus.toLowerCase();
+					if (statusLower.includes("ready")) {
+						this.displayElement.style.color = "#82c91e";
+						// Make it look more clickable when ready
+						this.displayElement.style.fontWeight = "bold";
+						if (this.currentContainerType === "primary") {
+							this.displayElement.style.cursor = "pointer";
+						}
+					} else if (statusLower.includes("waiting")) {
+						this.displayElement.style.color = "#bfb22f";
+						this.displayElement.style.fontWeight = "normal";
+						this.displayElement.style.cursor = "default";
+					} else if (
+						statusLower.includes("in race") ||
+						statusLower.includes("racing")
+					) {
+						this.displayElement.style.color = "#b63e2d";
+						this.displayElement.style.fontWeight = "normal";
+						this.displayElement.style.cursor = "default";
+					} else {
+						this.displayElement.style.color = ""; // Reset to default
+						this.displayElement.style.fontWeight = "normal";
+						this.displayElement.style.cursor = "default";
 					}
 
 					Logger.log(
-						`Updated race status: "${raceStatus}" with color: ${this.displayElement.style.color}`,
+						`Updated race status: "${raceStatus}" (clickable: ${raceStatus === "Ready!"})`,
 					);
 				}
 			}
@@ -345,7 +515,7 @@
 			}
 
 			this.intervalId = setInterval(() => {
-				if (RaceUtils.hasStatusChanged()) {
+				if (this.isAdded && RaceUtils.hasStatusChanged()) {
 					this.updateDisplay();
 				}
 			}, CONFIG.updateInterval);
@@ -360,19 +530,24 @@
 				this.observer.disconnect();
 				this.observer = null;
 			}
-			if (this.updateTimeout) {
-				clearTimeout(this.updateTimeout);
-				this.updateTimeout = null;
-			}
 		},
 	};
 
 	// ========== INITIALIZATION ==========
-	if (document.readyState === "complete") {
-		RaceDisplay.init();
+	if (
+		document.readyState === "complete" ||
+		document.readyState === "interactive"
+	) {
+		setTimeout(() => RaceDisplay.init(), 500);
 	} else {
-		window.addEventListener("load", () => RaceDisplay.init());
+		document.addEventListener("DOMContentLoaded", () => {
+			setTimeout(() => RaceDisplay.init(), 500);
+		});
 	}
+
+	window.addEventListener("load", () => {
+		setTimeout(() => RaceDisplay.init(), 500);
+	});
 
 	// ========== CLEANUP ==========
 	window.addEventListener("beforeunload", function () {
@@ -386,18 +561,35 @@
 			start: () => RaceDisplay.init(),
 			getRaceStatus: () => RaceUtils.getRaceStatus(),
 			forceUpdate: () => RaceDisplay.updateDisplay(),
+			findContainers: () => DOMUtils.findSpecificContainers(),
+			testSelectors: () => {
+				console.group("Selector Testing");
+				console.log("Race Icon Selectors:");
+				CONFIG.raceIconSelectors.forEach((sel) => {
+					console.log(`${sel}: ${document.querySelector(sel) ? "✓" : "✗"}`);
+				});
+				console.log("\nPrimary Container Selectors:");
+				CONFIG.containerSelectors.primary.forEach((sel) => {
+					const el = document.querySelector(sel);
+					console.log(
+						`${sel}: ${el ? "✓" : "✗"} ${el ? `(class: ${el.className})` : ""}`,
+					);
+				});
+				console.log("\nFallback Container Selectors:");
+				CONFIG.containerSelectors.fallback.forEach((sel) => {
+					const el = document.querySelector(sel);
+					console.log(
+						`${sel}: ${el ? "✓" : "✗"} ${el ? `(class: ${el.className})` : ""}`,
+					);
+				});
+				console.groupEnd();
+			},
 			enableDebug: () => {
 				CONFIG.debug = true;
+				Logger.info("Debug mode enabled");
 			},
 			disableDebug: () => {
 				CONFIG.debug = false;
-			},
-			elements: {
-				raceIcon: () => document.querySelector(CONFIG.raceIconSelector),
-				primaryContainer: () =>
-					document.querySelector(CONFIG.primaryContainerSelector),
-				fallbackContainer: () =>
-					document.querySelector(CONFIG.fallbackContainerSelector),
 			},
 		};
 		console.log(
