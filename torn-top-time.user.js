@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Top Time
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Adds a simple time display at the top
 // @author       Airfisher [4074952]
 // @match        https://www.torn.com/*
@@ -64,6 +64,14 @@
 
 		isElementVisible: function (element) {
 			return element && element.offsetParent !== null;
+		},
+
+		// check to see if time box already exists
+		timeBoxExists: function () {
+			return (
+				document.querySelector("#torn-hours, #torn-minutes, #torn-seconds") !==
+				null
+			);
 		},
 	};
 
@@ -151,6 +159,30 @@
 
 		init: function () {
 			Logger.log("Torn Top Time initializing...");
+
+			// check to see if another instance already added the box
+			if (DOMUtils.timeBoxExists()) {
+				Logger.log("Time box already exists, skipping initialization");
+				this.hoursElement = document.querySelector("#torn-hours");
+				this.minutesElement = document.querySelector("#torn-minutes");
+				this.secondsElement = document.querySelector("#torn-seconds");
+
+				if (this.hoursElement && this.minutesElement && this.secondsElement) {
+					this.isAdded = true;
+					this.startTimeUpdates();
+
+					// Still set up observer for cache refresh
+					this.refreshIntervalId = setInterval(
+						() => {
+							TimeElementFinder.invalidateCache();
+							Logger.log("Time element cache refreshed");
+						},
+						5 * 60 * 1000,
+					);
+				}
+				return;
+			}
+
 			this.attemptInitialInsertion();
 			this.setupObserver();
 			// Periodically check if the time element cache needs refresh (every 5 minutes)
@@ -165,7 +197,7 @@
 
 		setupObserver: function () {
 			const observer = new MutationObserver(() => {
-				if (!this.isAdded && this.shouldAddBox()) {
+				if (!this.isAdded && !DOMUtils.timeBoxExists() && this.shouldAddBox()) {
 					this.addBox();
 				}
 				// If the page structure changes significantly, invalidate the time element cache
@@ -194,7 +226,8 @@
 		},
 
 		addBox: async function () {
-			if (this.isAdded) {
+			if (this.isAdded || DOMUtils.timeBoxExists()) {
+				Logger.log("Box already exists, skipping creation");
 				return;
 			}
 
@@ -202,6 +235,11 @@
 
 			if (!sidebar) {
 				setTimeout(() => this.addBox(), CONFIG.retryDelay);
+				return;
+			}
+
+			if (DOMUtils.timeBoxExists()) {
+				Logger.log("Box was added by another instance while waiting");
 				return;
 			}
 
