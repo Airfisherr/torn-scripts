@@ -1,5 +1,22 @@
 # Airfisher's Torn Script Library
 
+## Torn Friend Filter - [Install with TamperMonkey](https://github.com/Airfisherr/torn-scripts/raw/refs/heads/main/torn-friend-filter.user.js)
+
+Torn Friend Filter adds options to filter friends by their status.
+
+- 🎯 Instant Filtering - Four filter options at your fingertips:
+  - All - View your complete friends list
+
+  - Online (Green) - See who's active and available right now
+
+  - Idle (Orange) - Check which friends are away
+
+  - Offline (Gray) - View friends who are currently offline
+
+![](./imgs/TornFriendFilter/1.png)
+
+###### ~ Thanks to `Kobacon [3474157]`
+
 ## Torn Race Checker - [Install with TamperMonkey](https://github.com/Airfisherr/torn-scripts/raw/refs/heads/main/torn-race-checker.user.js)
 
 Torn Race Checker adds a convenient race status display to your Torn sidebar that shows your current racing status at a glance.

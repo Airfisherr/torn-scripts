@@ -295,11 +295,9 @@
 				customDiv.innerHTML = `
 					<div style="
 						background: linear-gradient(180deg, #535353 0%, #333333 100%);
-						padding: 15px;
+						padding: 10px;
 						border-radius: 6px;
-						margin-bottom: 15px;
-						color: #fff;
-						font-family: Arial, sans-serif;
+						margin-bottom: 10px;
 						box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 					">
 						<div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
